@@ -1,27 +1,23 @@
-const Map = Dict{UnitRange{Int},Int}
-function get(m::Map, key::Int)
-    for (source, dest) in m
-        if key ∈ source
-            return dest + key - source.start
-        end
-    end
-    return key
-end
+const Range = UnitRange{Int}
+const Rule = Pair{Range,Int}
+const Map = Vector{Rule}
 
-function propagate(mv::Vector{Map}, key::Int)
-    for m in mv
-        key = get(m, key)
-    end
-    return key
+apply(input::Range, (source, shift)::Rule) = (input ∩ source) .+ shift
+apply(input::Range, m::Map) = filter(!isempty, apply.(Ref(input), m))
+apply(input::Vector{Range}, m::Map) = vcat(apply.(input, Ref(m))...)
+apply(input::Vector{Range}, mv::Vector{Map}) = reduce(apply, mv, init=input)
+
+function parse_range(r_str)
+    (dest, source_start, source_len) = parse.(Int, split(r_str))
+    return source_start:source_start+source_len-1 => dest - source_start
 end
 
 function parse_map(m_str)
-    m = Map()
-    for line in split(m_str, "\n", keepempty=false)[2:end]
-        (dest, source_start, source_len) = parse.(Int, split(line))
-        m[source_start:source_start+source_len-1] = dest
-    end
-    return m
+    map = parse_range.(split(m_str, "\n", keepempty=false)[2:end])
+    min_range = minimum(x -> x.first.start, map)
+    max_range = maximum(x -> x.first.stop, map)
+    push!(map, 0:min_range-1 => 0, max_range+1:typemax(Int) => 0)
+    return map
 end
 
 function parse_file(file_str)
@@ -33,9 +29,11 @@ end
 
 open(ARGS[1]) do file
     seeds, maps = parse_file(read(file, String))
-    part1 = minimum(propagate(maps, seed) for seed in seeds)
-    println(prod(length, maps))
+    init1 = [seed:seed for seed in seeds]
+    init2 = [start:start+shift for (start, shift) in Iterators.partition(seeds, 2)]
+    part1 = minimum(minimum, apply(init1, maps))
+    part2 = minimum(minimum, apply(init2, maps))
 
     println("Part one : ", part1)
-    # println("Part two : ", part2)
+    println("Part two : ", part2)
 end

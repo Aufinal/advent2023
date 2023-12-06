@@ -8,7 +8,6 @@ function n_winners(card::String)
 end
 
 function total_cards(cards)
-    n_cards = length(cards)
     card_counts = ones(Int, length(cards))
     for (i, card) in enumerate(cards)
         card_counts[i+1:i+n_winners(card)] .+= card_counts[i]
