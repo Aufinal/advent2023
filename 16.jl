@@ -16,27 +16,38 @@ function turn_split(b::Beam, c::Char)
         return [b]
     end
 end
-
 turn_split(b::Beam, field::AbstractMatrix{Char}) = turn_split(b, field[b.pos...])
-advance(b::Beam) = Beam(b.pos .+ b.dir, b.dir)
-is_inbounds(b::Beam, field::AbstractMatrix{Char}) = checkbounds(Bool, field, b.pos...)
-function one_step(beam::Beam, field::AbstractMatrix{Char})
-    new_beams = turn_split(beam, field)
-    return filter(b -> is_inbounds(b, field), advance.(new_beams))
+
+function mark!(visited, (old_x, old_y), (new_x, new_y))
+    range_x, range_y = range(minmax(old_x, new_x)...), range(minmax(old_y, new_y)...)
+    union!(visited, Iterators.product(range_x, range_y))
 end
 
-function mem_simulate!(mem, beam::Beam, field::AbstractMatrix{Char})
-    function mem2_simulate!(mem, cur_path, beam, field)
-        get!(mem, beam) do
-            idx = findfirst(isequal(beam), cur_path)
-            if !isnothing(idx)
-                return Set(b.pos for b in cur_path[idx:end])
-            end
-            all_visited = (mem2_simulate!(mem, [cur_path; beam], new_beam, field) for new_beam in one_step(beam, field))
-            return union(Set([beam.pos]), all_visited...)
-        end
+function advance!(b::Beam, visited, field::AbstractMatrix{Char})
+    dim, perp = iszero(b.dir[1]) ? (1, 2) : (2, 1)
+    find_func = b.dir[perp] == -1 ? findprev : findnext
+    next_idx = find_func(!isequal('.'), selectdim(field, dim, b.pos[dim]), b.pos[perp] + b.dir[perp])
+    some_idx = something(next_idx, b.dir[perp] == -1 ? 1 : size(field, dim))
+    new_pos = dim == 1 ? (b.pos[1], some_idx) : (some_idx, b.pos[2])
+    mark!(visited, b.pos, new_pos)
+
+    return isnothing(next_idx) ? nothing : Beam(new_pos, b.dir)
+end
+
+function one_step!(beams, visited, field)
+    turned_beams = vcat(turn_split.(beams, Ref(field))...)
+    return filter(!isnothing, advance!.(turned_beams, Ref(visited), Ref(field)))
+end
+
+function simulate(beam, field)
+    beams = [beam]
+    memory = Set{Beam}()
+    visited = Set{Tuple{Int,Int}}()
+    while !isempty(beams)
+        union!(memory, beams)
+        beams = filter(∉(memory), one_step!(beams, visited, field))
     end
-    mem2_simulate!(mem, [], beam, field)
+    return length(visited)
 end
 
 function select_dim(field, dir, dim)
@@ -52,12 +63,9 @@ starting_beams(field) = [Beam(pos, dir) for dir in [(0, 1), (0, -1), (1, 0), (-1
 
 open(ARGS[1]) do file
     field = vcat(reshape.(collect.(eachline(file)), 1, :)...)
-    mem = Dict{Beam,Set{Tuple{Int,Int}}}()
     start_beams = starting_beams(field)
-    foreach(b -> mem_simulate!(mem, b, field), start_beams)
-    println(map(b -> length(mem[b]), start_beams))
-    part1 = length(mem[Beam((1, 1), (0, 1))])
-    part2 = maximum(b -> length(mem[b]), start_beams)
+    part1 = simulate(Beam((1, 1), (0, 1)), field)
+    part2 = maximum(b -> simulate(b, field), start_beams)
     println("Part 1 : $part1")
     println("Part 2 : $part2")
 end
